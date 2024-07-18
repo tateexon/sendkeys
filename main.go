@@ -1,17 +1,26 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
+	"math/rand"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/micmonay/keybd_event"
 )
 
+const (
+	PAUSE_CHARS = " ()[]\n."
+)
+
 type SendKeys struct {
 	KeyBindings   map[rune]KeyMapping
 	StartDelay    time.Duration
-	InterKeyDelay time.Duration
+	InterKeyDelay int
+	Variance      int
 	kb            keybd_event.KeyBonding
 }
 
@@ -21,6 +30,7 @@ type KeyMapping struct {
 }
 
 func (sk *SendKeys) Init() error {
+	rand.Seed(time.Now().UnixNano())
 	if sk.KeyBindings == nil {
 		sk.KeyBindings = sk.GetWindowsKeyBindings()
 	}
@@ -32,6 +42,7 @@ func (sk *SendKeys) Init() error {
 	return nil
 }
 
+// GetWindowsKeyBindings Sets up and returns a map with the general bindings for a windows keyboard
 func (sk SendKeys) GetWindowsKeyBindings() map[rune]KeyMapping {
 	return map[rune]KeyMapping{
 		'a':  {keybd_event.VK_A, false},
@@ -133,6 +144,7 @@ func (sk SendKeys) GetWindowsKeyBindings() map[rune]KeyMapping {
 	}
 }
 
+// TypeString types the string with random duration of pauses between characters
 func (sk SendKeys) TypeString(s string) error {
 	for _, char := range s {
 		if keyMapping, ok := sk.KeyBindings[char]; ok {
@@ -147,7 +159,11 @@ func (sk SendKeys) TypeString(s string) error {
 				fmt.Println("Error typing key:", err)
 				return err
 			}
-			time.Sleep(sk.InterKeyDelay) // Adjust delay as needed
+			sleepDuration := time.Duration(getRandomNumber(sk.InterKeyDelay, sk.Variance))
+			if strings.Contains(PAUSE_CHARS, string(char)) {
+				sleepDuration = time.Duration(getRandomNumber(sk.InterKeyDelay+100, sk.Variance))
+			}
+			time.Sleep(sleepDuration * time.Millisecond)
 		} else {
 			return fmt.Errorf("unsupported character: %s", string(char))
 		}
@@ -155,25 +171,67 @@ func (sk SendKeys) TypeString(s string) error {
 	return nil
 }
 
+// Generate a random number within the specified range [-range, +range]
+func getRandomNumber(base, rangeVal int) int {
+	return base + rand.Intn(2*rangeVal+1) - rangeVal
+}
+
+// readFile reads in the file as a string
+func readFile(fileName string) (string, error) {
+	file, err := os.Open(fileName)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	var text string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		text += scanner.Text() + "\n"
+	}
+
+	if err := scanner.Err(); err != nil {
+		return "", err
+	}
+
+	return text, nil
+}
+
 func main() {
 	// Define command-line arguments
 	t := flag.Int("t", 5, "Number of seconds to wait before starting")
-	i := flag.Int("i", 85, "Interval in milliseconds between each key press")
+	i := flag.Int("i", 75, "Interval in milliseconds between each key press")
+	v := flag.Int("v", 40, "Variance of interval in milliseconds")
+	f := flag.String("f", "", "A file with text you wish to be typed")
 	s := flag.String("s", "", "String to type")
 
 	// Parse the command-line arguments
 	flag.Parse()
 
-	if *s == "" {
-		fmt.Println("No string to type")
+	if *s == "" && *f == "" {
+		fmt.Println("No string to type or file to pull from")
 		return
+	}
+
+	toType := ""
+	var err error
+
+	if *s != "" {
+		toType = *s
+	} else if *f != "" {
+		toType, err = readFile(*f)
+		if err != nil {
+			fmt.Printf("Error reading file: %v\n", err)
+			return
+		}
 	}
 
 	sk := &SendKeys{
 		StartDelay:    time.Duration(*t) * time.Second,
-		InterKeyDelay: time.Duration(*i) * time.Millisecond,
+		InterKeyDelay: *i,
+		Variance:      *v,
 	}
-	err := sk.Init()
+	err = sk.Init()
 	if err != nil {
 		fmt.Println("Error initializing keybd_event:", err)
 		return
@@ -184,7 +242,7 @@ func main() {
 	time.Sleep(sk.StartDelay)
 
 	// type the text
-	err = sk.TypeString(*s)
+	err = sk.TypeString(toType)
 	if err != nil {
 		fmt.Println("Error typing string:", err)
 		return
