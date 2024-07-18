@@ -30,7 +30,6 @@ type KeyMapping struct {
 }
 
 func (sk *SendKeys) Init() error {
-	rand.Seed(time.Now().UnixNano())
 	if sk.KeyBindings == nil {
 		sk.KeyBindings = sk.GetWindowsKeyBindings()
 	}
@@ -198,7 +197,6 @@ func readFile(fileName string) (string, error) {
 }
 
 func main() {
-	// Define command-line arguments
 	t := flag.Int("t", 5, "Number of seconds to wait before starting")
 	i := flag.Int("i", 75, "Interval in milliseconds between each key press")
 	v := flag.Int("v", 40, "Variance of interval in milliseconds")
